@@ -8,6 +8,7 @@ from pytorch_lightning.loggers import WandbLogger
 
 from beat_this.dataset import BeatDataModule
 from beat_this.model.pl_module import PLBeatThis
+from beat_this.inference import load_checkpoint
 
 
 def main(args):
@@ -52,6 +53,8 @@ def main(args):
             "max_parts": 9,
         }
 
+    annotation_dirs = ["jamon"] if args.checkpoint else None
+
     datamodule = BeatDataModule(
         data_dir,
         batch_size=args.batch_size,
@@ -64,6 +67,7 @@ def main(args):
         hung_data=args.hung_data,
         no_val=not args.val,
         fold=args.fold,
+        annotation_dirs=annotation_dirs,
     )
     datamodule.setup(stage="fit")
 
@@ -123,6 +127,11 @@ def main(args):
         accumulate_grad_batches=args.accumulate_grad_batches,
         check_val_every_n_epoch=args.val_frequency,
     )
+
+    if args.checkpoint:
+        checkpoint = load_checkpoint(args.checkpoint)
+        pl_model = PLBeatThis(**checkpoint["hyper_parameters"])
+        pl_model.load_state_dict(checkpoint["state_dict"])
 
     trainer.fit(pl_model, datamodule)
     trainer.test(pl_model, datamodule)
@@ -270,6 +279,12 @@ if __name__ == "__main__":
         type=int,
         default=0,
         help="Seed for the random number generators.",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="Checkpoint to train on",
     )
 
     args = parser.parse_args()
