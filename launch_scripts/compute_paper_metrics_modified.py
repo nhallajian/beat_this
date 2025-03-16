@@ -22,7 +22,9 @@ def main(args):
         checkpoint = load_checkpoint(checkpoint_path)
 
         # create datamodule
-        datamodule = datamodule_setup(checkpoint, args.num_workers, args.datasplit)
+        datamodule = datamodule_setup(
+            checkpoint, args.num_workers, args.datasplit, args.test_set
+        )
         # create model and trainer
         model, trainer = plmodel_setup(
             checkpoint, args.eval_trim_beats, args.dbn, args.gpu
@@ -54,7 +56,9 @@ def main(args):
             # computing result variability for the same dataset and different model seeds
             # create datamodule only once, as we assume it is the same for all models
             checkpoint = load_checkpoint(args.models[0])
-            datamodule = datamodule_setup(checkpoint, args.num_workers, args.datasplit)
+            datamodule = datamodule_setup(
+                checkpoint, args.num_workers, args.datasplit, args.test_set
+            )
             # create model and trainer
             all_metrics = []
             for checkpoint_path in args.models:
@@ -84,7 +88,7 @@ def main(args):
             print("Metrics")
             for k, v in all_metrics_stats.items():
                 # round to 3 decimal places
-                print(f"{k}: {round(v[0],3)} +- {round(v[1],3)}")
+                print(f"{k}: {round(v[0], 3)} +- {round(v[1], 3)}")
         elif args.aggregation_type == "k-fold":
             # computing results in the K-fold setting. Every fold has a different dataset
             all_piece_metrics = []
@@ -92,10 +96,10 @@ def main(args):
             all_piece = []
             # create datamodule for each model
             for i_model, checkpoint_path in enumerate(args.models):
-                print(f"Model {i_model+1}/{len(args.models)}")
+                print(f"Model {i_model + 1}/{len(args.models)}")
                 checkpoint = load_checkpoint(checkpoint_path)
                 datamodule = datamodule_setup(
-                    checkpoint, args.num_workers, args.datasplit
+                    checkpoint, args.num_workers, args.datasplit, args.test_set
                 )
                 # create model and trainer
                 model, trainer = plmodel_setup(
@@ -116,9 +120,9 @@ def main(args):
             all_piece_dataset = np.concatenate(all_piece_dataset)
             all_piece = np.concatenate(all_piece)
             # double check that there are no errors in the fold and there are not repeated pieces
-            assert len(all_piece) == len(
-                np.unique(all_piece)
-            ), "There are repeated pieces in the folds"
+            assert len(all_piece) == len(np.unique(all_piece)), (
+                "There are repeated pieces in the folds"
+            )
             dataset_metrics = {
                 k: {
                     d: np.mean(v[all_piece_dataset == d])
@@ -131,13 +135,13 @@ def main(args):
             for k, v in dataset_metrics.items():
                 print(k)
                 for d, value in v.items():
-                    print(f"{d}: {round(value,3)}")
+                    print(f"{d}: {round(value, 3)}")
                 print("------")
         else:
             raise ValueError(f"Unknown aggregation type {args.aggregation_type}")
 
 
-def datamodule_setup(checkpoint, num_workers, datasplit):
+def datamodule_setup(checkpoint, num_workers, datasplit, test_dataset):
     # Load the datamodule
     print("Creating datamodule")
     data_dir = Path(__file__).parent.parent.relative_to(Path.cwd()) / "data"
@@ -147,6 +151,8 @@ def datamodule_setup(checkpoint, num_workers, datasplit):
         datamodule_hparams["num_workers"] = num_workers
     datamodule_hparams["predict_datasplit"] = datasplit
     datamodule_hparams["data_dir"] = data_dir
+    if test_dataset:
+        datamodule_hparams["test_dataset"] = test_dataset
     datamodule = BeatDataModule(**datamodule_hparams)
     datamodule.setup(stage="predict")
     return datamodule
@@ -191,11 +197,10 @@ def plmodel_setup(checkpoint, eval_trim_beats, dbn, gpu):
     return model, trainer
 
 
-
 def compute_predictions(model, trainer, predict_dataloader):
     print("Computing predictions ...")
     out = trainer.predict(model, predict_dataloader)
-    
+
     metrics = [o[0] for o in out]  # Per-batch metrics
     preds = [o[1] for o in out]  # Predictions (not used here)
     dataset = np.asarray([o[2][0] for o in out])  # Dataset name
@@ -220,7 +225,6 @@ def compute_predictions(model, trainer, predict_dataloader):
     return metrics_dict, dataset, preds, piece
 
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Computes predictions for a given model and dataset, "
@@ -238,7 +242,7 @@ if __name__ == "__main__":
         type=str,
         choices=("train", "val", "test"),
         default="val",
-        help="data split to use: train, val or test " "(default: %(default)s)",
+        help="data split to use: train, val or test (default: %(default)s)",
     )
     parser.add_argument("--gpu", type=int, default=0)
     parser.add_argument(
@@ -264,6 +268,13 @@ if __name__ == "__main__":
         choices=("mean-std", "k-fold"),
         default="mean-std",
         help="Type of aggregation to use for multiple models; ignored if only one model is given",
+    )
+
+    parser.add_argument(
+        "--test-set",
+        type=str,
+        default=None,
+        help="Name of dataset to test on",
     )
 
     args = parser.parse_args()
