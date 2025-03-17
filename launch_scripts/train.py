@@ -53,8 +53,6 @@ def main(args):
             "max_parts": 9,
         }
 
-    annotation_dirs = ["jamon"] if args.checkpoint else None
-
     datamodule = BeatDataModule(
         data_dir,
         batch_size=args.batch_size,
@@ -67,7 +65,7 @@ def main(args):
         hung_data=args.hung_data,
         no_val=not args.val,
         fold=args.fold,
-        annotation_dirs=annotation_dirs,
+        annotation_dirs=[args.annotation_dir] if args.annotation_dir else None,
     )
     datamodule.setup(stage="fit")
 
@@ -285,6 +283,9 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="Checkpoint to train on",
+    )
+    parser.add_argument(
+        "--annotation-dir", type=str, default=None, help="Dataset to finetune on"
     )
 
     args = parser.parse_args()
